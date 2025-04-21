@@ -98,7 +98,7 @@ def _load_branch_map_from_git(diff_base: str = _MAIN_BRANCH) -> dict[str, list[s
 
     branch_map = {}
     for branch in _list_branches():
-        if branch == _MAIN_BRANCH:
+        if branch in (_MAIN_BRANCH, _UNTRACKED_BRANCH):
             continue
 
         # Get a list of files between `main` and $branch. I.e. files that are
@@ -106,7 +106,7 @@ def _load_branch_map_from_git(diff_base: str = _MAIN_BRANCH) -> dict[str, list[s
         files = _run_or_die(_DIFF_FILES_IN_BRANCH % (diff_base, branch))
         branch_map[branch] = files
         potentially_untracked_files = potentially_untracked_files.difference(files)
-
+        
     # At this point all mapped files were already mapped, so all remaining are
     # untracked.
     branch_map[_UNTRACKED_BRANCH] = sorted(potentially_untracked_files)

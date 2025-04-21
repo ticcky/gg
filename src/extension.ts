@@ -1,5 +1,6 @@
 // $ code $(pwd) --extensionDevelopmentPath=$(pwd)
 // $ npm run watch
+// test
 
 import * as vscode from 'vscode';
 import * as path from 'path';
@@ -34,6 +35,7 @@ export function activate(context: vscode.ExtensionContext) {
     if (workspaceFolders) {
       const output = await executeCommand('python3 ' + extensionPath + '/gg.py commit-all', workspaceFolders[0].uri.fsPath);
       console.log(output);
+      vscode.window.showInformationMessage('GG: commit-all done\n' + output);
       ggViewProvider.refresh();
     }
   });
@@ -44,9 +46,21 @@ export function activate(context: vscode.ExtensionContext) {
     if (workspaceFolders) {
       const output = await executeCommand('python3 ' + extensionPath + '/gg.py push-all', workspaceFolders[0].uri.fsPath);
       console.log(output);
+      vscode.window.showInformationMessage('GG: push-all done\n' + output);
       ggViewProvider.refresh();
     }
   });  
+
+  const ggSetBranchCommand = vscode.commands.registerCommand('gg.setBranch', async (branch: String, file: String) => {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    const extensionPath = context.extensionPath;
+    if (workspaceFolders) {
+      const output = await executeCommand('python3 ' + extensionPath + '/gg.py set-branch -b ' + branch + ' -f ' + file, workspaceFolders[0].uri.fsPath);
+      console.log(output);
+      vscode.window.showInformationMessage('GG: set-branch done\n' + output);
+      ggViewProvider.refresh();
+    }
+  }); 
 
   const openFileCommand = vscode.commands.registerCommand('gg.openFile', (fileItem: FileItem) => {
     if (fileItem) {
@@ -65,7 +79,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
-  context.subscriptions.push(treeView, refreshCommand, ggCommitAllCommand, ggPushAllCommand, ggUpdateBranchMapCommand, openFileCommand, showDiffCommand);
+  context.subscriptions.push(treeView, refreshCommand, ggSetBranchCommand, ggCommitAllCommand, ggPushAllCommand, ggUpdateBranchMapCommand, openFileCommand, showDiffCommand);
 }
 
 class FileItem extends vscode.TreeItem {
@@ -322,15 +336,15 @@ class GGViewProvider implements vscode.TreeDataProvider<FileItem> {
 
       // Check if dropping onto a category
       if (target && target.filePath == "") {
-        const categoryName = target.label.toString();
+        // const categoryName = target.label.toString();
 
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders) {
-          return;
-        }
-        const path = workspaceFolders[0].uri.fsPath;
-        const content = await readFileContent(path + "/.gg-branch-assignment.txt");
-        const data = parseFileIntoDict(content);
+        // const workspaceFolders = vscode.workspace.workspaceFolders;
+        // if (!workspaceFolders) {
+        //   return;
+        // }
+        // const path = workspaceFolders[0].uri.fsPath;
+        // const content = await readFileContent(path + "/.gg-branch-assignment.txt");
+        // const data = parseFileIntoDict(content);
 
         
         // Process each dropped file
@@ -340,7 +354,8 @@ class GGViewProvider implements vscode.TreeDataProvider<FileItem> {
             // This is just an example - adapt to your data structure
             // const fileName = path.basename(uri.fsPath);
             console.log('Adding %s to %s', uri, target.label);
-            moveFile(data, uri, target.label);
+            // moveFile(data, uri, target.label);
+            await vscode.commands.executeCommand('gg.setBranch', target.label, uri);
             
             // You might want to write this back to your categories file
             // await this.saveDictionary();
@@ -349,14 +364,14 @@ class GGViewProvider implements vscode.TreeDataProvider<FileItem> {
           }
         }
 
-        console.log(data);
+        // console.log(data);
 
-        try {
-          await fs.writeFile(path + "/.gg-branch-assignment.txt", linearize(data), () => {});
-          console.log('Wrote it.');
-        } catch (err) {
-          console.error('Failed to write file', err);
-        }
+        // try {
+        //   await fs.writeFile(path + "/.gg-branch-assignment.txt", linearize(data), () => {});
+        //   console.log('Wrote it.');
+        // } catch (err) {
+        //   console.error('Failed to write file', err);
+        // }
 
         // Refresh the view to show the changes
         this.refresh();

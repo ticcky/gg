@@ -43,7 +43,11 @@
         "command": "gg.pushAll",
         "title": "Push All",
         "icon": "$(broadcast)"
-      },      
+      },  
+      {
+        "command": "gg.setBranch",
+        "title": "Set Branch"
+      },     
       {
         "command": "gg.openFile",
         "title": "Open File"
