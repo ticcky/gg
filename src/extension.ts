@@ -1,5 +1,6 @@
 // $ code $(pwd) --extensionDevelopmentPath=$(pwd)
 // $ npm run watch
+// test
 
 import * as vscode from 'vscode';
 import * as path from 'path';
