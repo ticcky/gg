@@ -1,23 +1,52 @@
+// $ code $(pwd) --extensionDevelopmentPath=$(pwd)
+// $ npm run watch
+
 import * as vscode from 'vscode';
 import * as path from 'path';
 
 export function activate(context: vscode.ExtensionContext) {
   const ggViewProvider = new GGViewProvider();
 
-  vscode.window.registerTreeDataProvider('ggView', ggViewProvider);
+  // vscode.window.registerTreeDataProvider('ggView', ggViewProvider);
+  const treeView = vscode.window.createTreeView('ggView', {
+    treeDataProvider: ggViewProvider,
+    dragAndDropController: ggViewProvider,
+    showCollapseAll: false
+  });
 
   const refreshCommand = vscode.commands.registerCommand('gg.refresh', () => {
     ggViewProvider.refresh();
   });
 
-  const runCommand = vscode.commands.registerCommand('gg.run', async () => {
+  const ggUpdateBranchMapCommand = vscode.commands.registerCommand('gg.updateBranchMap', async () => {
     const workspaceFolders = vscode.workspace.workspaceFolders;
+    const extensionPath = context.extensionPath;
     if (workspaceFolders) {
-      const output = await executeCommand('/Users/lukaszilka/bin/gg', workspaceFolders[0].uri.fsPath);
+      const output = await executeCommand('python3 ' + extensionPath + '/gg.py update-branch-map', workspaceFolders[0].uri.fsPath);
       console.log(output);
       ggViewProvider.refresh();
     }
   });
+
+  const ggCommitAllCommand = vscode.commands.registerCommand('gg.commitAll', async () => {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    const extensionPath = context.extensionPath;
+    if (workspaceFolders) {
+      const output = await executeCommand('python3 ' + extensionPath + '/gg.py commit-all', workspaceFolders[0].uri.fsPath);
+      console.log(output);
+      ggViewProvider.refresh();
+    }
+  });
+
+  const ggPushAllCommand = vscode.commands.registerCommand('gg.pushAll', async () => {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    const extensionPath = context.extensionPath;
+    if (workspaceFolders) {
+      const output = await executeCommand('python3 ' + extensionPath + '/gg.py push-all', workspaceFolders[0].uri.fsPath);
+      console.log(output);
+      ggViewProvider.refresh();
+    }
+  });  
 
   const openFileCommand = vscode.commands.registerCommand('gg.openFile', (fileItem: FileItem) => {
     if (fileItem) {
@@ -36,7 +65,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
-  context.subscriptions.push(refreshCommand, runCommand, openFileCommand, showDiffCommand);
+  context.subscriptions.push(treeView, refreshCommand, ggCommitAllCommand, ggPushAllCommand, ggUpdateBranchMapCommand, openFileCommand, showDiffCommand);
 }
 
 class FileItem extends vscode.TreeItem {
@@ -171,9 +200,59 @@ function parseFileIntoDict(fileContent: string): Record<string, string[]> {
   return result;
 }
 
+function moveFile(map: Record<string, string[]>, filename: string, targetKey: string): void {
+  // 1) remove from any list that contains it
+  for (const key in map) {
+    const idx = map[key].indexOf(filename);
+    if (idx !== -1) {
+      map[key].splice(idx, 1);
+    }
+  }
+
+  // 2) ensure targetKey exists
+  if (!map[targetKey]) {
+    map[targetKey] = [];
+  }
+
+  // 3) push if not already there
+  if (!map[targetKey].includes(filename)) {
+    map[targetKey].push(filename);
+  }
+}
+
+function linearize(map: Record<string, string[]>): string {
+  const lines: string[] = [];
+
+  for (const key of Object.keys(map)) {
+    lines.push(`# ${key}`);
+    for (const file of map[key]) {
+      lines.push(file);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+async function fileExists(uri: vscode.Uri): Promise<boolean> {
+  try {
+      await vscode.workspace.fs.stat(uri);
+      return true;
+  } catch (err) {
+      if (err instanceof vscode.FileSystemError && err.code === 'FileNotFound') {
+          return false;
+      }
+      throw err; // rethrow unexpected errors
+  }
+}
+
 class GGViewProvider implements vscode.TreeDataProvider<FileItem> {
   private _onDidChangeTreeData: vscode.EventEmitter<FileItem | undefined | null | void> = new vscode.EventEmitter<FileItem | undefined | null | void>();
   readonly onDidChangeTreeData: vscode.Event<FileItem | undefined | null | void> = this._onDidChangeTreeData.event;
+
+  // Add these properties for drag and drop
+  dragMimeTypes = ['text/plain'];
+  dropMimeTypes = ['text/plain'];
 
   refresh(): void {
     this._onDidChangeTreeData.fire();
@@ -201,7 +280,12 @@ class GGViewProvider implements vscode.TreeDataProvider<FileItem> {
     }
 
     const path = workspaceFolders[0].uri.fsPath;
-    const content = await readFileContent(path + "/.gg-branch-assignment.txt");
+
+    if (!await fileExists(vscode.Uri.file(path + "/.gg.txt"))) {
+      await vscode.commands.executeCommand('gg.updateBranchMap');
+    }
+    
+    const content = await readFileContent(path + "/.gg.txt");
     const data = parseFileIntoDict(content);
     if (branchName == null) {
       return Object.keys(data).map(key => {
@@ -209,8 +293,76 @@ class GGViewProvider implements vscode.TreeDataProvider<FileItem> {
       });
     } else {
       return data[branchName].map(key => {
-        return new FileItem(key, key, vscode.TreeItemCollapsibleState.None)
+        return new FileItem(key, path + '/' + key, vscode.TreeItemCollapsibleState.None)
       });
+    }
+  }
+
+  // Handle drag operations
+  handleDrag(source: readonly FileItem[], dataTransfer: vscode.DataTransfer): void {
+    // Only allow dragging file items, not categories
+    const fileItems = source.filter(item => item.filePath != "");
+
+    if (fileItems.length > 0) {
+      const uriList = fileItems
+        .map(item => item.label)
+        .join('\n');
+      dataTransfer.set('text/plain', new vscode.DataTransferItem(uriList.toString()));
+    }
+  }
+
+  // Handle drop operations
+  async handleDrop(target: FileItem | undefined, dataTransfer: vscode.DataTransfer): Promise<void> {
+    // Get the dropped data
+    const uriListData = dataTransfer.get('text/plain');
+
+    if (uriListData) {
+      const uriList = uriListData.value.toString().split('\n');
+      console.log(uriList);
+
+      // Check if dropping onto a category
+      if (target && target.filePath == "") {
+        const categoryName = target.label.toString();
+
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) {
+          return;
+        }
+        const path = workspaceFolders[0].uri.fsPath;
+        const content = await readFileContent(path + "/.gg-branch-assignment.txt");
+        const data = parseFileIntoDict(content);
+
+        
+        // Process each dropped file
+        for (const uri of uriList) {
+          try {
+            // Add the file to the category in your dictionary
+            // This is just an example - adapt to your data structure
+            // const fileName = path.basename(uri.fsPath);
+            console.log('Adding %s to %s', uri, target.label);
+            moveFile(data, uri, target.label);
+            
+            // You might want to write this back to your categories file
+            // await this.saveDictionary();
+          } catch (error) {
+            vscode.window.showErrorMessage(`Error processing dropped file: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+
+        console.log(data);
+
+        try {
+          await fs.writeFile(path + "/.gg-branch-assignment.txt", linearize(data), () => {});
+          console.log('Wrote it.');
+        } catch (err) {
+          console.error('Failed to write file', err);
+        }
+
+        // Refresh the view to show the changes
+        this.refresh();
+      } else {
+        vscode.window.showInformationMessage('Please drop onto a category to add files.');
+      }
     }
   }
 }

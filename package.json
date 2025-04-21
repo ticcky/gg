@@ -30,10 +30,20 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "gg.run",
-        "title": "Run `gg`",
-        "icon": "$(edit-session)"
+        "command": "gg.updateBranchMap",
+        "title": "Update Branch Map",
+        "icon": "$(book)"
+      },      
+      {
+        "command": "gg.commitAll",
+        "title": "Commit All",
+        "icon": "$(check-all)"
       },
+      {
+        "command": "gg.pushAll",
+        "title": "Push All",
+        "icon": "$(broadcast)"
+      },      
       {
         "command": "gg.openFile",
         "title": "Open File"
@@ -52,8 +62,11 @@
           "group": "navigation"
         },
         {
-          "command": "gg.run",
-          "when": "view == ggView",
+          "command": "gg.commitAll",
+          "group": "navigation"
+        },
+        {
+          "command": "gg.pushAll",
           "group": "navigation"
         }
       ],
